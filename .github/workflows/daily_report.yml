@@ -2,8 +2,8 @@ name: Daily AI Gadget Reporter
 
 on:
   schedule:
-    # Runs at 10:00 PM UTC every day
-    - cron: '0 22 * * *'
+    # Runs at 9:00 PM UTC (10:00 PM BST / UK Time) every day
+    - cron: '0 21 * * *'
   workflow_dispatch:
     # Allows manually running this workflow from the GitHub Actions UI
 
@@ -23,7 +23,7 @@ jobs:
 
       - name: Install dependencies
         run: |
-          pip install beautifulsoup4 requests
+          pip install -r requirements.txt
 
       - name: Run Scraping & Email Report
         env:
