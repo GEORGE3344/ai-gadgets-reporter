@@ -138,22 +138,98 @@ def extract_products_from_video(video, video_title, video_link, video_thumbnail_
         
     return sub_products
 
+def generate_content_via_llm(name, raw_desc):
+    gemini_key = os.environ.get("GEMINI_API_KEY", "")
+    openai_key = os.environ.get("OPENAI_API_KEY", "")
+    
+    # Strictly instruct the model to produce 100% unique, technical review copy
+    prompt = f"""
+    You are an expert Tech Blogger and Product Reviewer writing a high-density, deeply technical product analysis for a premier gadget website.
+    Write a 100% unique, comprehensive product notes profile for standard copy-pasting. Do NOT use templates, repetitive sentence structures, or generic filler text. Base the text ONLY on the metadata.
+    
+    Product/Feature Name: {name}
+    Extracted Metadata Context: {raw_desc}
+    
+    Provide your output in valid JSON format with the following keys. Do NOT wrap the JSON in markdown code blocks like ```json. Output ONLY the raw JSON string:
+    {{
+        "overview": "A high-quality, comprehensive paragraph (at least 80-120 words) explaining the exact breakthrough technology of this specific gadget, what makes it unique, and the technical innovation behind it.",
+        "steps": [
+            "Step 1: Concrete, highly specific technical pairing/calibration or setup step tailored ONLY to how this particular product functions.",
+            "Step 2: Concrete, highly specific operational step tailored ONLY to how a user interacts with this specific product.",
+            "Step 3: Concrete, highly specific advanced workflow or execution step tailored ONLY to this product's unique capabilities."
+        ],
+        "benefits": [
+            "In-depth value analysis point 1 (20-30 words) explaining exactly how this improves a user's life or daily productivity.",
+            "In-depth value analysis point 2 (20-30 words) explaining standard real-world advantages.",
+            "In-depth value analysis point 3 (20-30 words) explaining technical performance advantages.",
+            "In-depth value analysis point 4 (20-30 words) explaining convenience and cognitive load reduction."
+        ]
+    }}
+    """
+    
+    # Try Gemini API first
+    if gemini_key:
+        print("GEMINI_API_KEY found! Launching generative content prompt...")
+        url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={gemini_key}"
+        headers = {"Content-Type": "application/json"}
+        payload = {"contents": [{"parts": [{"text": prompt}]}]}
+        try:
+            response = requests.post(url, headers=headers, json=payload, timeout=25)
+            if response.status_code == 200:
+                text = response.json()["candidates"][0]["content"]["parts"][0]["text"].strip()
+                text_clean = re.sub(r'^```json\s*|```$', '', text, flags=re.MULTILINE).strip()
+                return json.loads(text_clean)
+        except Exception as e:
+            print(f"Gemini API generation failed: {e}")
+            
+    # Try OpenAI API second
+    if openai_key:
+        print("OPENAI_API_KEY found! Launching ChatCompletion prompt...")
+        url = "https://api.openai.com/v1/chat/completions"
+        headers = {
+            "Content-Type": "application/json",
+            "Authorization": f"Bearer {openai_key}"
+        }
+        payload = {
+            "model": "gpt-4o-mini",
+            "messages": [
+                {"role": "system", "content": "You are a helpful assistant that outputs only valid raw JSON."},
+                {"role": "user", "content": prompt}
+            ],
+            "temperature": 0.2
+        }
+        try:
+            response = requests.post(url, headers=headers, json=payload, timeout=25)
+            if response.status_code == 200:
+                text = response.json()["choices"][0]["message"]["content"].strip()
+                text_clean = re.sub(r'^```json\s*|```$', '', text, flags=re.MULTILINE).strip()
+                return json.loads(text_clean)
+        except Exception as e:
+            print(f"OpenAI API generation failed: {e}")
+            
+    return None
+
 def generate_product_editorial(name, raw_desc):
-    # Dynamic Innovation Overview (A to Z)
+    # Try using configured AI Models first
+    llm_result = generate_content_via_llm(name, raw_desc)
+    if llm_result and isinstance(llm_result, dict) and "overview" in llm_result:
+        return llm_result
+        
+    print(f"No active AI key found or generation errored. Falling back to built-in smart review heuristics for '{name}'...")
+    
+    # Robust smart-fallback generation
     overview = (
         f"The {name} represents a major engineering breakthrough in modern AI hardware, showcasing a seamless transition from traditional cloud dependence to localized edge computation. "
         f"From A to Z, this innovative system integrates state-of-the-art multi-threaded microprocessors with advanced natural language parsing networks. Designed to operate with near-zero latency, "
         f"the technology tracks real-time environmental context, acoustic voice cues, and digital inputs to continuously assist the user without sending sensitive profiles off-device. It stands as a comprehensive paradigm shift in how consumers interact with ambient computational networks."
     )
     
-    # Dynamic How to Use
     steps = [
         f"<strong>Step 1: Calibration & Profile Pairing</strong> — Establish a secure connection between the {name} and your workstation using secure local communication protocols, and complete standard biometric/speech profile pairing.",
         f"<strong>Step 2: Sensing & Ambient Initiation</strong> — Turn on standard visual/acoustic mapping by issuing customized vocal triggers or tapping the physical interface sensor. The unit will configure itself to your current workspace environment.",
         f"<strong>Step 3: Multi-Layered Query Execution</strong> — State complex instructions, present physical documents, or record audio logs to receive instant, localized analytical summaries, cross-language translations, and daily tasks automation."
     ]
     
-    # Dynamic Full Benefits
     benefits = [
         f"<strong>On-Edge Low Latency Processing</strong>: Executes complex machine learning models directly on standard edge processors, reducing response wait times to under 100 milliseconds.",
         f"<strong>Decentralized Data Security</strong>: Guarantees user privacy by entirely bypassing cloud servers. Biometric voiceprints and personal workspace logs remain strictly local.",
