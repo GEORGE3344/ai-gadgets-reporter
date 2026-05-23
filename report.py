@@ -161,7 +161,9 @@ def generate_html_report(products, run_time):
     return html
 
 def send_email(subject, html_content):
-    smtp_host = os.environ.get("SMTP_HOST", "smtp.gmail.com")
+    # Robustly load SMTP host/server, defaulting to smtp.gmail.com if empty or not set
+    smtp_host_raw = os.environ.get("SMTP_HOST") or os.environ.get("SMTP_SERVER") or ""
+    smtp_host = smtp_host_raw.strip() if smtp_host_raw.strip() else "smtp.gmail.com"
     
     # Safely parse port, handling empty strings and non-integer inputs gracefully
     smtp_port_raw = os.environ.get("SMTP_PORT", "587")
