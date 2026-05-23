@@ -196,15 +196,30 @@ def send_email(subject, html_content):
         msg.attach(part)
         
         import smtplib
+        print(f"SMTP Config - Host: {smtp_host}, Port: {smtp_port}, User: {smtp_user}")
+        
         if smtp_port == 465:
-            server = smtplib.SMTP_SSL(smtp_host, smtp_port)
+            print("Initializing SMTP_SSL connection...")
+            server = smtplib.SMTP_SSL(smtp_host, smtp_port, timeout=30)
         else:
-            server = smtplib.SMTP(smtp_host, smtp_port)
+            print("Initializing standard SMTP connection...")
+            server = smtplib.SMTP()
+            print(f"Connecting to {smtp_host}:{smtp_port}...")
+            server.connect(smtp_host, smtp_port)
+            print("Sending EHLO...")
+            server.ehlo()
+            print("Starting TLS (starttls)...")
             server.starttls()
+            print("Sending EHLO post-TLS...")
+            server.ehlo()
             
+        print("Attempting login...")
         server.login(smtp_user, smtp_password)
+        print("Sending mail...")
         server.sendmail(sender_email, receiver_email, msg.as_string())
+        print("Closing SMTP connection...")
         server.quit()
+        print("Daily report email successfully sent.")
         print(f"Daily report email successfully sent to {receiver_email}.")
     except Exception as e:
         print(f"Error during email automation: {e}")
