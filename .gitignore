@@ -1,0 +1,15 @@
+# Environment files
+.env
+
+# Local reports
+local_report.html
+yt_data.json
+
+# Python caching
+__pycache__/
+*.py[cod]
+*$py.class
+
+# IDE configurations
+.vscode/
+.idea/
