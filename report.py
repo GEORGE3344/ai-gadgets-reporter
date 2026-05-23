@@ -172,10 +172,17 @@ def send_email(subject, html_content):
     except ValueError:
         smtp_port = 587
         
-    smtp_user = os.environ.get("SMTP_USER") or os.environ.get("SENDER_EMAIL") or ""
-    smtp_password = os.environ.get("SMTP_PASSWORD") or os.environ.get("EMAIL_PASSWORD") or ""
-    sender_email = os.environ.get("SENDER_EMAIL") or smtp_user
-    receiver_email = os.environ.get("RECEIVER_EMAIL", "georgealbert777@gmail.com")
+    smtp_user_raw = os.environ.get("SMTP_USER") or os.environ.get("SENDER_EMAIL") or ""
+    smtp_user = smtp_user_raw.strip().replace("<", "").replace(">", "").replace('"', '').replace("'", "")
+    
+    smtp_password_raw = os.environ.get("SMTP_PASSWORD") or os.environ.get("EMAIL_PASSWORD") or ""
+    smtp_password = smtp_password_raw.strip()
+    
+    sender_email_raw = os.environ.get("SENDER_EMAIL") or smtp_user
+    sender_email = sender_email_raw.strip().replace("<", "").replace(">", "").replace('"', '').replace("'", "")
+    
+    receiver_email_raw = os.environ.get("RECEIVER_EMAIL") or "georgealbert777@gmail.com"
+    receiver_email = receiver_email_raw.strip().replace("<", "").replace(">", "").replace('"', '').replace("'", "")
     
     if not smtp_user or not smtp_password:
         print("\n[Warning] SMTP credentials not set. Saving report as local file for manual verification.")
