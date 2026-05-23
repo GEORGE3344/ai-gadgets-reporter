@@ -22,6 +22,19 @@ def load_dotenv(dotenv_path=".env"):
 # Load configuration from .env file (if present)
 load_dotenv(os.path.join(os.path.dirname(__file__), ".env"))
 
+def get_video_transcript(video_id):
+    try:
+        from youtube_transcript_api import YouTubeTranscriptApi
+        api = YouTubeTranscriptApi()
+        transcript = api.fetch(video_id)
+        # Iterate over FetchedTranscriptSnippet elements
+        full_text = " ".join([snippet.text for snippet in transcript])
+        print(f"Successfully retrieved verbal transcript for video {video_id} ({len(full_text)} characters).")
+        return full_text
+    except Exception as e:
+        print(f"Could not retrieve verbal transcript for video {video_id}: {e}")
+        return ""
+
 def extract_features(video):
     runs_text = []
     
@@ -60,164 +73,8 @@ def extract_features(video):
         
     return bullets[:4]
 
-def extract_products_from_video(video, video_title, video_link, video_thumbnail_url):
-    sub_products = []
-    
-    # 1. Parse raw text runs from metadata snippets
-    raw_text = ""
-    snippets = video.get("detailedMetadataSnippets", [])
-    for snippet in snippets:
-        runs = snippet.get("snippetText", {}).get("runs", [])
-        raw_text += " " + "".join([r.get("text", "") for r in runs])
-        
-    desc_snippet = video.get("descriptionSnippet", {})
-    runs = desc_snippet.get("runs", [])
-    raw_text += " " + "".join([r.get("text", "") for r in runs])
-    
-    # 2. Extract potential named entities/features using lines split
-    lines = re.split(r'\n|; |\.\s+', raw_text)
-    
-    seen_names = set()
-    
-    # Check for specific numbered items like "1. Name", "01. Name", "- Name"
-    for line in lines:
-        line = line.strip().strip('-').strip('*').strip()
-        if not line:
-            continue
-            
-        # Match "1. Product Name" or "1 - Product Name"
-        match = re.match(r'^\d+\s*[\.\-\:]\s*([A-Za-z0-9\s\&\-\_\'\(\)]+)', line)
-        if match:
-            prod_name = match.group(1).strip()
-            # Clean up the product name
-            prod_name = re.sub(r'\s+in\s+202\d.*$', '', prod_name, flags=re.IGNORECASE)
-            prod_name = re.sub(r'\b(umissfun|companion|gadget|ai)\b.*$', '', prod_name, flags=re.IGNORECASE).strip()
-            # Restore name or ignore if too short
-            if len(prod_name) > 3 and len(prod_name) < 45:
-                name_key = prod_name.lower()
-                if name_key not in seen_names:
-                    seen_names.add(name_key)
-                    sub_products.append({
-                        "name": prod_name,
-                        "raw_desc": line,
-                        "link": video_link,
-                        "thumbnail_url": video_thumbnail_url
-                    })
-                    
-    # 3. Fallback: Parse names from description snippet keywords
-    if not sub_products:
-        keywords = ["Emotional AI Companion", "Smart Glasses", "Plaud NotePin", "AI Smart Ring", "Gemini Spark Agent", "Multimodal Wearable Hub"]
-        for kw in keywords:
-            if kw.lower() in raw_text.lower() or kw.lower() in video_title.lower():
-                name_key = kw.lower()
-                if name_key not in seen_names:
-                    seen_names.add(name_key)
-                    sub_products.append({
-                        "name": kw,
-                        "raw_desc": f"An innovative integration of {kw} technology delivering next-generation digital workflow acceleration and hardware-native AI convenience.",
-                        "link": video_link,
-                        "thumbnail_url": video_thumbnail_url
-                    })
-                    
-    # 4. Final Fallback: Clean up the main video title and treat it as a single high-density product
-    if not sub_products:
-        clean_title = video_title
-        fluff_words = ["Best", "AI", "Gadgets", "in", "2026", "You", "Must", "See", "!", "on", "Amazon", "WON'T", "Believe", "Exist", "NEED", "To", "For", "Changing", "Everything", "Travelers"]
-        for word in fluff_words:
-            clean_title = re.sub(rf'\b{word}\b', '', clean_title, flags=re.IGNORECASE)
-        clean_title = clean_title.strip().strip('-').strip(':').strip()
-        if not clean_title or len(clean_title) < 5:
-            clean_title = "Multimodal Wearable AI Terminal"
-            
-        sub_products.append({
-            "name": clean_title,
-            "raw_desc": f"A comprehensive breakthrough featured in the trending analysis: {video_title}.",
-            "link": video_link,
-            "thumbnail_url": video_thumbnail_url
-        })
-        
-    return sub_products
-
-def generate_content_via_llm(name, raw_desc):
-    gemini_key = os.environ.get("GEMINI_API_KEY", "")
-    openai_key = os.environ.get("OPENAI_API_KEY", "")
-    
-    # Strictly instruct the model to produce 100% unique, technical review copy
-    prompt = f"""
-    You are an expert Tech Blogger and Product Reviewer writing a high-density, deeply technical product analysis for a premier gadget website.
-    Write a 100% unique, comprehensive product notes profile for standard copy-pasting. Do NOT use templates, repetitive sentence structures, or generic filler text. Base the text ONLY on the metadata.
-    
-    Product/Feature Name: {name}
-    Extracted Metadata Context: {raw_desc}
-    
-    Provide your output in valid JSON format with the following keys. Do NOT wrap the JSON in markdown code blocks like ```json. Output ONLY the raw JSON string:
-    {{
-        "overview": "A high-quality, comprehensive paragraph (at least 80-120 words) explaining the exact breakthrough technology of this specific gadget, what makes it unique, and the technical innovation behind it.",
-        "steps": [
-            "Step 1: Concrete, highly specific technical pairing/calibration or setup step tailored ONLY to how this particular product functions.",
-            "Step 2: Concrete, highly specific operational step tailored ONLY to how a user interacts with this specific product.",
-            "Step 3: Concrete, highly specific advanced workflow or execution step tailored ONLY to this product's unique capabilities."
-        ],
-        "benefits": [
-            "In-depth value analysis point 1 (20-30 words) explaining exactly how this improves a user's life or daily productivity.",
-            "In-depth value analysis point 2 (20-30 words) explaining standard real-world advantages.",
-            "In-depth value analysis point 3 (20-30 words) explaining technical performance advantages.",
-            "In-depth value analysis point 4 (20-30 words) explaining convenience and cognitive load reduction."
-        ]
-    }}
-    """
-    
-    # Try Gemini API first
-    if gemini_key:
-        print("GEMINI_API_KEY found! Launching generative content prompt...")
-        url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={gemini_key}"
-        headers = {"Content-Type": "application/json"}
-        payload = {"contents": [{"parts": [{"text": prompt}]}]}
-        try:
-            response = requests.post(url, headers=headers, json=payload, timeout=25)
-            if response.status_code == 200:
-                text = response.json()["candidates"][0]["content"]["parts"][0]["text"].strip()
-                text_clean = re.sub(r'^```json\s*|```$', '', text, flags=re.MULTILINE).strip()
-                return json.loads(text_clean)
-        except Exception as e:
-            print(f"Gemini API generation failed: {e}")
-            
-    # Try OpenAI API second
-    if openai_key:
-        print("OPENAI_API_KEY found! Launching ChatCompletion prompt...")
-        url = "https://api.openai.com/v1/chat/completions"
-        headers = {
-            "Content-Type": "application/json",
-            "Authorization": f"Bearer {openai_key}"
-        }
-        payload = {
-            "model": "gpt-4o-mini",
-            "messages": [
-                {"role": "system", "content": "You are a helpful assistant that outputs only valid raw JSON."},
-                {"role": "user", "content": prompt}
-            ],
-            "temperature": 0.2
-        }
-        try:
-            response = requests.post(url, headers=headers, json=payload, timeout=25)
-            if response.status_code == 200:
-                text = response.json()["choices"][0]["message"]["content"].strip()
-                text_clean = re.sub(r'^```json\s*|```$', '', text, flags=re.MULTILINE).strip()
-                return json.loads(text_clean)
-        except Exception as e:
-            print(f"OpenAI API generation failed: {e}")
-            
-    return None
-
-def generate_product_editorial(name, raw_desc):
-    # Try using configured AI Models first
-    llm_result = generate_content_via_llm(name, raw_desc)
-    if llm_result and isinstance(llm_result, dict) and "overview" in llm_result:
-        return llm_result
-        
-    print(f"No active AI key found or generation errored. Falling back to built-in smart review heuristics for '{name}'...")
-    
-    # Robust smart-fallback generation
+def generate_product_editorial_fallback(name, raw_desc):
+    # Robust fallback generation if LLM is not configured/errored
     overview = (
         f"The {name} represents a major engineering breakthrough in modern AI hardware, showcasing a seamless transition from traditional cloud dependence to localized edge computation. "
         f"From A to Z, this innovative system integrates state-of-the-art multi-threaded microprocessors with advanced natural language parsing networks. Designed to operate with near-zero latency, "
@@ -242,6 +99,182 @@ def generate_product_editorial(name, raw_desc):
         "steps": steps,
         "benefits": benefits
     }
+
+def generate_all_products_via_llm(video_title, video_link, video_thumbnail_url, text_context):
+    gemini_key = os.environ.get("GEMINI_API_KEY", "")
+    openai_key = os.environ.get("OPENAI_API_KEY", "")
+    
+    prompt = f"""
+    You are an expert Tech Blogger and Product Reviewer compiling a high-density, deeply technical product analysis for a premier gadget website.
+    Read the following complete voice transcript/context metadata for the video: "{video_title}".
+    
+    Video URL: {video_link}
+    Video Thumbnail: {video_thumbnail_url}
+    
+    Complete Voice Transcript/Metadata Context:
+    \"\"\"
+    {text_context}
+    \"\"\"
+    
+    TASK:
+    Identify EVERY SINGLE distinct tech product, hardware gadget, or software application mentioned, reviewed, or featured by the presenter in the transcript/context from start to finish. Do not limit the count. If twenty innovations are discussed, document all twenty.
+    
+    For each distinct product identified, generate a 100% unique, comprehensive Tech Blog Review.
+    Do NOT use templates, generic sentence structures, or repetitive filler phrasing between different products.
+    
+    Provide your output in valid JSON format with a key named "products" containing a list of objects. Do NOT wrap the JSON in markdown code blocks like ```json. Output ONLY the raw JSON string matching this schema:
+    {{
+        "products": [
+            {{
+                "name": "Product/Feature Name (Clear Heading)",
+                "overview": "A high-quality, comprehensive paragraph (at least 80-120 words) explaining the exact breakthrough technology of this specific gadget, what makes it unique, and the technical innovation behind it.",
+                "steps": [
+                    "Step 1: Concrete, highly specific technical pairing/calibration or setup step tailored ONLY to how this particular product functions.",
+                    "Step 2: Concrete, highly specific operational step tailored ONLY to how a user interacts with this specific product.",
+                    "Step 3: Concrete, highly specific advanced workflow or execution step tailored ONLY to this product's unique capabilities."
+                ],
+                "benefits": [
+                    "In-depth value analysis point 1 (20-30 words) explaining exactly how this improves a user's life or daily productivity.",
+                    "In-depth value analysis point 2 (20-30 words) explaining standard real-world advantages.",
+                    "In-depth value analysis point 3 (20-30 words) explaining technical performance advantages.",
+                    "In-depth value analysis point 4 (20-30 words) explaining convenience and cognitive load reduction."
+                ]
+            }}
+        ]
+    }}
+    """
+    
+    # Try Gemini API first
+    if gemini_key:
+        print(f"GEMINI_API_KEY found! Querying Gemini for all products in '{video_title}'...")
+        url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={gemini_key}"
+        headers = {"Content-Type": "application/json"}
+        payload = {"contents": [{"parts": [{"text": prompt}]}]}
+        try:
+            response = requests.post(url, headers=headers, json=payload, timeout=30)
+            if response.status_code == 200:
+                text = response.json()["candidates"][0]["content"]["parts"][0]["text"].strip()
+                text_clean = re.sub(r'^```json\s*|```$', '', text, flags=re.MULTILINE).strip()
+                result = json.loads(text_clean)
+                if "products" in result and isinstance(result["products"], list):
+                    # Attach link and thumbnail metadata to each product profile
+                    for p in result["products"]:
+                        p["link"] = video_link
+                        p["thumbnail_url"] = video_thumbnail_url
+                    return result["products"]
+        except Exception as e:
+            print(f"Gemini API list generation failed: {e}")
+            
+    # Try OpenAI API second
+    if openai_key:
+        print(f"OPENAI_API_KEY found! Querying OpenAI for all products in '{video_title}'...")
+        url = "https://api.openai.com/v1/chat/completions"
+        headers = {
+            "Content-Type": "application/json",
+            "Authorization": f"Bearer {openai_key}"
+        }
+        payload = {
+            "model": "gpt-4o-mini",
+            "messages": [
+                {"role": "system", "content": "You are a helpful assistant that outputs only valid raw JSON."},
+                {"role": "user", "content": prompt}
+            ],
+            "temperature": 0.2
+        }
+        try:
+            response = requests.post(url, headers=headers, json=payload, timeout=30)
+            if response.status_code == 200:
+                text = response.json()["choices"][0]["message"]["content"].strip()
+                text_clean = re.sub(r'^```json\s*|```$', '', text, flags=re.MULTILINE).strip()
+                result = json.loads(text_clean)
+                if "products" in result and isinstance(result["products"], list):
+                    for p in result["products"]:
+                        p["link"] = video_link
+                        p["thumbnail_url"] = video_thumbnail_url
+                    return result["products"]
+        except Exception as e:
+            print(f"OpenAI API list generation failed: {e}")
+            
+    return None
+
+def extract_products_fallback(video, video_title, video_link, video_thumbnail_url):
+    # Built-in fallback heuristics to split description metadata if LLM keys are absent/errored
+    sub_products = []
+    
+    raw_text = ""
+    snippets = video.get("detailedMetadataSnippets", [])
+    for snippet in snippets:
+        runs = snippet.get("snippetText", {}).get("runs", [])
+        raw_text += " " + "".join([r.get("text", "") for r in runs])
+        
+    desc_snippet = video.get("descriptionSnippet", {})
+    runs = desc_snippet.get("runs", [])
+    raw_text += " " + "".join([r.get("text", "") for r in runs])
+    
+    lines = re.split(r'\n|; |\.\s+', raw_text)
+    seen_names = set()
+    
+    for line in lines:
+        line = line.strip().strip('-').strip('*').strip()
+        if not line:
+            continue
+            
+        match = re.match(r'^\d+\s*[\.\-\:]\s*([A-Za-z0-9\s\&\-\_\'\(\)]+)', line)
+        if match:
+            prod_name = match.group(1).strip()
+            prod_name = re.sub(r'\s+in\s+202\d.*$', '', prod_name, flags=re.IGNORECASE)
+            prod_name = re.sub(r'\b(umissfun|companion|gadget|ai)\b.*$', '', prod_name, flags=re.IGNORECASE).strip()
+            if len(prod_name) > 3 and len(prod_name) < 45:
+                name_key = prod_name.lower()
+                if name_key not in seen_names:
+                    seen_names.add(name_key)
+                    editorial = generate_product_editorial_fallback(prod_name, line)
+                    sub_products.append({
+                        "name": prod_name,
+                        "overview": editorial["overview"],
+                        "steps": editorial["steps"],
+                        "benefits": editorial["benefits"],
+                        "link": video_link,
+                        "thumbnail_url": video_thumbnail_url
+                    })
+                    
+    if not sub_products:
+        keywords = ["Emotional AI Companion", "Smart Glasses", "Plaud NotePin", "AI Smart Ring", "Gemini Spark Agent", "Multimodal Wearable Hub"]
+        for kw in keywords:
+            if kw.lower() in raw_text.lower() or kw.lower() in video_title.lower():
+                name_key = kw.lower()
+                if name_key not in seen_names:
+                    seen_names.add(name_key)
+                    editorial = generate_product_editorial_fallback(kw, raw_text)
+                    sub_products.append({
+                        "name": kw,
+                        "overview": editorial["overview"],
+                        "steps": editorial["steps"],
+                        "benefits": editorial["benefits"],
+                        "link": video_link,
+                        "thumbnail_url": video_thumbnail_url
+                    })
+                    
+    if not sub_products:
+        clean_title = video_title
+        fluff_words = ["Best", "AI", "Gadgets", "in", "2026", "You", "Must", "See", "!", "on", "Amazon", "WON'T", "Believe", "Exist", "NEED", "To", "For", "Changing", "Everything", "Travelers"]
+        for word in fluff_words:
+            clean_title = re.sub(rf'\b{word}\b', '', clean_title, flags=re.IGNORECASE)
+        clean_title = clean_title.strip().strip('-').strip(':').strip()
+        if not clean_title or len(clean_title) < 5:
+            clean_title = "Multimodal Wearable AI Terminal"
+            
+        editorial = generate_product_editorial_fallback(clean_title, video_title)
+        sub_products.append({
+            "name": clean_title,
+            "overview": editorial["overview"],
+            "steps": editorial["steps"],
+            "benefits": editorial["benefits"],
+            "link": video_link,
+            "thumbnail_url": video_thumbnail_url
+        })
+        
+    return sub_products
 
 def generate_html_report(products, run_time):
     date_str = run_time.strftime('%B %d, %Y')
@@ -299,14 +332,11 @@ def generate_html_report(products, run_time):
                 </div>
         """
     else:
-        html += """
-                <h2 style="margin: 0 0 24px 0; font-size: 20px; font-weight: 800; color: #0f172a; text-transform: uppercase; letter-spacing: 0.5px; border-bottom: 2px solid #e2e8f0; padding-bottom: 8px;">Blog-Ready Product Profiles (A-Z Deep Breakdown)</h2>
+        html += f"""
+                <h2 style="margin: 0 0 24px 0; font-size: 20px; font-weight: 800; color: #0f172a; text-transform: uppercase; letter-spacing: 0.5px; border-bottom: 2px solid #e2e8f0; padding-bottom: 8px;">Blog-Ready Product Profiles ({len(products)} Unique Discoveries)</h2>
         """
         
         for idx, item in enumerate(products):
-            # Generate rich blog editorial notes dynamically
-            editorial = generate_product_editorial(item['name'], item['raw_desc'])
-            
             html += f"""
                 <!-- Product Card {idx + 1} -->
                 <div style="margin-bottom: 40px; border: 1px solid #e2e8f0; border-radius: 12px; padding: 28px; background-color: #ffffff; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.03), 0 2px 4px -1px rgba(0, 0, 0, 0.02);">
@@ -334,7 +364,7 @@ def generate_html_report(products, run_time):
                     <!-- A to Z Deep Innovation Overview -->
                     <div style="margin-bottom: 24px;">
                         <h4 style="margin: 0 0 8px 0; font-size: 13px; font-weight: 800; color: #2563eb; text-transform: uppercase; letter-spacing: 0.5px;">A-Z Deep Innovation Overview</h4>
-                        <p style="margin: 0; font-size: 14px; color: #334155; line-height: 1.6;">{editorial['overview']}</p>
+                        <p style="margin: 0; font-size: 14px; color: #334155; line-height: 1.6;">{item['overview']}</p>
                     </div>
 
                     <!-- How To Use (Step by Step) -->
@@ -343,7 +373,7 @@ def generate_html_report(products, run_time):
                         <ol style="margin: 0; padding-left: 20px; font-size: 14px; color: #334155; line-height: 1.6;">
             """
             
-            for step in editorial['steps']:
+            for step in item['steps']:
                 html += f"""
                             <li style="margin-bottom: 8px;">{step}</li>
                 """
@@ -358,7 +388,7 @@ def generate_html_report(products, run_time):
                         <ul style="margin: 0; padding-left: 20px; font-size: 14px; color: #334155; line-height: 1.6;">
             """
             
-            for benefit in editorial['benefits']:
+            for benefit in item['benefits']:
                 html += f"""
                             <li style="margin-bottom: 8px;">{benefit}</li>
                 """
@@ -467,7 +497,7 @@ def get_ai_gadget_report():
     url = "https://www.youtube.com/results?search_query=latest+ai+gadgets+features"
     headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"}
     
-    parsed_products = []
+    all_discovered_products = []
     
     try:
         response = requests.get(url, headers=headers)
@@ -515,9 +545,33 @@ def get_ai_gadget_report():
                         video_count += 1
                         video_link = f"https://www.youtube.com/watch?v={video_id}"
                         
-                        # Extract and split individual gadgets/sub-products
-                        extracted = extract_products_from_video(video, title_text, video_link, thumbnail_url)
-                        parsed_products.extend(extracted)
+                        # 1. Fetch complete verbal voice transcript for maximum coverage
+                        transcript_text = get_video_transcript(video_id)
+                        
+                        # 2. Fall back to page metadata context if transcript is missing
+                        if not transcript_text:
+                            print("Transcript unavailable. Bundling metadata snippets as context...")
+                            raw_meta = ""
+                            snippets = video.get("detailedMetadataSnippets", [])
+                            for snippet in snippets:
+                                runs = snippet.get("snippetText", {}).get("runs", [])
+                                raw_meta += " " + "".join([r.get("text", "") for r in runs])
+                            desc_snippet = video.get("descriptionSnippet", {})
+                            runs = desc_snippet.get("runs", [])
+                            raw_meta += " " + "".join([r.get("text", "") for r in runs])
+                            text_context = raw_meta
+                        else:
+                            text_context = transcript_text
+                            
+                        # 3. Query LLM to isolate and document every single mentioned product
+                        llm_products = generate_all_products_via_llm(title_text, video_link, thumbnail_url, text_context)
+                        
+                        if llm_products:
+                            all_discovered_products.extend(llm_products)
+                        else:
+                            # Heuristic fallback if LLM is not configured/errored
+                            extracted_fallback = extract_products_fallback(video, title_text, video_link, thumbnail_url)
+                            all_discovered_products.extend(extracted_fallback)
                         
                         if video_count >= 3:
                             break
@@ -525,7 +579,7 @@ def get_ai_gadget_report():
                 print(f"JSON Parsing Error (attempting fallback): {parse_err}")
                 
         # Fallback to BeautifulSoup if ytInitialData is not found or failed to return products
-        if not parsed_products:
+        if not all_discovered_products:
             try:
                 soup = BeautifulSoup(html, 'html.parser')
                 results = soup.find_all('a', href=True)
@@ -539,10 +593,12 @@ def get_ai_gadget_report():
                         full_link = f"https://www.youtube.com/watch{watch_part}"
                         
                         video_count += 1
-                        # Build standard fallback profile
-                        parsed_products.append({
+                        editorial = generate_product_editorial_fallback(title.strip().split(" - ")[0], title)
+                        all_discovered_products.append({
                             "name": title.strip().split(" - ")[0].split(" | ")[0],
-                            "raw_desc": f"An innovative AI device featured in the trending briefing: {title}.",
+                            "overview": editorial["overview"],
+                            "steps": editorial["steps"],
+                            "benefits": editorial["benefits"],
                             "link": full_link,
                             "thumbnail_url": ""
                         })
@@ -555,13 +611,10 @@ def get_ai_gadget_report():
     except Exception as e:
         print(f"Network Scraper Error: {e}")
         
-    # Crop total extracted products to keep report highly readable (top 4-5 copyable product profiles)
-    final_products = parsed_products[:5]
-        
-    # Generate HTML & Send Email
+    # Generate HTML & Send Email (documenting ALL products without artificial capping)
     subject = f"Daily Tech Blog AI Gadgets Report — {run_time.strftime('%Y-%m-%d')}"
     try:
-        html_report = generate_html_report(final_products, run_time)
+        html_report = generate_html_report(all_discovered_products, run_time)
         send_email(subject, html_report)
     except Exception as email_err:
         print(f"Critical Failure compiling/sending report: {email_err}")
