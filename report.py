@@ -204,10 +204,8 @@ def send_email(subject, html_content):
             print("Initializing SMTP_SSL connection...")
             server = smtplib.SMTP_SSL(smtp_host, smtp_port, timeout=30)
         else:
-            print("Initializing standard SMTP connection...")
-            server = smtplib.SMTP()
-            print(f"Connecting to {smtp_host}:{smtp_port}...")
-            server.connect(smtp_host, smtp_port)
+            print(f"Connecting to {smtp_host}:{smtp_port} using standard SMTP...")
+            server = smtplib.SMTP(smtp_host, smtp_port, timeout=30)
             print("Sending EHLO...")
             server.ehlo()
             print("Starting TLS (starttls)...")
