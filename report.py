@@ -100,16 +100,13 @@ def generate_product_editorial_fallback(name, raw_desc):
         "benefits": benefits
     }
 
-def generate_all_products_via_llm(video_title, video_link, video_thumbnail_url, text_context):
+def get_product_directory_from_context(video_title, text_context):
     gemini_key = os.environ.get("GEMINI_API_KEY", "")
     openai_key = os.environ.get("OPENAI_API_KEY", "")
     
     prompt = f"""
-    You are an expert Tech Blogger and Product Reviewer compiling a high-density, deeply technical product analysis for a premier gadget website.
-    Read the following complete voice transcript/context metadata for the video: "{video_title}".
-    
-    Video URL: {video_link}
-    Video Thumbnail: {video_thumbnail_url}
+    You are an expert Tech Blogger compiling a list of all tech products discussed in a video.
+    Analyze this complete voice transcript/context for the video: "{video_title}".
     
     Complete Voice Transcript/Metadata Context:
     \"\"\"
@@ -117,36 +114,19 @@ def generate_all_products_via_llm(video_title, video_link, video_thumbnail_url, 
     \"\"\"
     
     TASK:
-    Identify EVERY SINGLE distinct tech product, hardware gadget, or software application mentioned, reviewed, or featured by the presenter in the transcript/context from start to finish. Do not limit the count. If twenty innovations are discussed, document all twenty.
+    Identify every single distinct tech product, hardware gadget, or software application mentioned, reviewed, or featured by the presenter in the transcript from start to finish. Do not limit the count. If twenty gadgets are discussed, capture all twenty.
     
-    For each distinct product identified, generate a 100% unique, comprehensive Tech Blog Review.
-    Do NOT use templates, generic sentence structures, or repetitive filler phrasing between different products.
-    
-    Provide your output in valid JSON format with a key named "products" containing a list of objects. Do NOT wrap the JSON in markdown code blocks like ```json. Output ONLY the raw JSON string matching this schema:
+    Provide your output in valid JSON format with a key named "product_names" containing a list of strings representing the names of each product. Do NOT wrap the JSON in markdown code blocks like ```json. Output ONLY the raw JSON string matching this schema:
     {{
-        "products": [
-            {{
-                "name": "Product/Feature Name (Clear Heading)",
-                "overview": "A high-quality, comprehensive paragraph (at least 80-120 words) explaining the exact breakthrough technology of this specific gadget, what makes it unique, and the technical innovation behind it.",
-                "steps": [
-                    "Step 1: Concrete, highly specific technical pairing/calibration or setup step tailored ONLY to how this particular product functions.",
-                    "Step 2: Concrete, highly specific operational step tailored ONLY to how a user interacts with this specific product.",
-                    "Step 3: Concrete, highly specific advanced workflow or execution step tailored ONLY to this product's unique capabilities."
-                ],
-                "benefits": [
-                    "In-depth value analysis point 1 (20-30 words) explaining exactly how this improves a user's life or daily productivity.",
-                    "In-depth value analysis point 2 (20-30 words) explaining standard real-world advantages.",
-                    "In-depth value analysis point 3 (20-30 words) explaining technical performance advantages.",
-                    "In-depth value analysis point 4 (20-30 words) explaining convenience and cognitive load reduction."
-                ]
-            }}
+        "product_names": [
+            "Product 1 Name",
+            "Product 2 Name"
         ]
     }}
     """
     
     # Try Gemini API first
     if gemini_key:
-        print(f"GEMINI_API_KEY found! Querying Gemini for all products in '{video_title}'...")
         url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={gemini_key}"
         headers = {"Content-Type": "application/json"}
         payload = {"contents": [{"parts": [{"text": prompt}]}]}
@@ -156,18 +136,13 @@ def generate_all_products_via_llm(video_title, video_link, video_thumbnail_url, 
                 text = response.json()["candidates"][0]["content"]["parts"][0]["text"].strip()
                 text_clean = re.sub(r'^```json\s*|```$', '', text, flags=re.MULTILINE).strip()
                 result = json.loads(text_clean)
-                if "products" in result and isinstance(result["products"], list):
-                    # Attach link and thumbnail metadata to each product profile
-                    for p in result["products"]:
-                        p["link"] = video_link
-                        p["thumbnail_url"] = video_thumbnail_url
-                    return result["products"]
+                if "product_names" in result and isinstance(result["product_names"], list):
+                    return result["product_names"]
         except Exception as e:
-            print(f"Gemini API list generation failed: {e}")
+            print(f"Gemini API directory call failed: {e}")
             
     # Try OpenAI API second
     if openai_key:
-        print(f"OPENAI_API_KEY found! Querying OpenAI for all products in '{video_title}'...")
         url = "https://api.openai.com/v1/chat/completions"
         headers = {
             "Content-Type": "application/json",
@@ -187,15 +162,93 @@ def generate_all_products_via_llm(video_title, video_link, video_thumbnail_url, 
                 text = response.json()["choices"][0]["message"]["content"].strip()
                 text_clean = re.sub(r'^```json\s*|```$', '', text, flags=re.MULTILINE).strip()
                 result = json.loads(text_clean)
-                if "products" in result and isinstance(result["products"], list):
-                    for p in result["products"]:
-                        p["link"] = video_link
-                        p["thumbnail_url"] = video_thumbnail_url
-                    return result["products"]
+                if "product_names" in result and isinstance(result["product_names"], list):
+                    return result["product_names"]
         except Exception as e:
-            print(f"OpenAI API list generation failed: {e}")
+            print(f"OpenAI API directory call failed: {e}")
             
     return None
+
+def generate_single_product_editorial_via_llm(name, text_context):
+    gemini_key = os.environ.get("GEMINI_API_KEY", "")
+    openai_key = os.environ.get("OPENAI_API_KEY", "")
+    
+    prompt = f"""
+    You are an expert Tech Blogger and Product Reviewer writing a high-density, deeply technical product analysis for a premier gadget website.
+    Write a 100% unique, comprehensive product notes profile for standard copy-pasting for the product: "{name}".
+    Base the text ONLY on the metadata/transcript provided. Do NOT use templates, repetitive sentence structures, or generic filler text.
+    
+    Product Name: {name}
+    Transcript Context:
+    \"\"\"
+    {text_context}
+    \"\"\"
+    
+    Provide your output in valid JSON format with the following keys. Do NOT wrap the JSON in markdown code blocks like ```json. Output ONLY the raw JSON string matching this schema:
+    {{
+        "overview": "A high-quality, comprehensive paragraph (at least 80-120 words) explaining the exact breakthrough technology of this specific gadget, what makes it unique, and the technical innovation behind it.",
+        "steps": [
+            "Step 1: Concrete, highly specific technical pairing/calibration or setup step tailored ONLY to how this particular product functions.",
+            "Step 2: Concrete, highly specific operational step tailored ONLY to how a user interacts with this specific product.",
+            "Step 3: Concrete, highly specific advanced workflow or execution step tailored ONLY to this product's unique capabilities."
+        ],
+        "benefits": [
+            "In-depth value analysis point 1 (20-30 words) explaining exactly how this improves a user's life or daily productivity.",
+            "In-depth value analysis point 2 (20-30 words) explaining standard real-world advantages.",
+            "In-depth value analysis point 3 (20-30 words) explaining technical performance advantages.",
+            "In-depth value analysis point 4 (20-30 words) explaining convenience and cognitive load reduction."
+        ]
+    }}
+    """
+    
+    # Try Gemini API first
+    if gemini_key:
+        url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={gemini_key}"
+        headers = {"Content-Type": "application/json"}
+        payload = {"contents": [{"parts": [{"text": prompt}]}]}
+        try:
+            response = requests.post(url, headers=headers, json=payload, timeout=25)
+            if response.status_code == 200:
+                text = response.json()["candidates"][0]["content"]["parts"][0]["text"].strip()
+                text_clean = re.sub(r'^```json\s*|```$', '', text, flags=re.MULTILINE).strip()
+                return json.loads(text_clean)
+        except Exception as e:
+            print(f"Gemini API single generation failed for '{name}': {e}")
+            
+    # Try OpenAI API second
+    if openai_key:
+        url = "https://api.openai.com/v1/chat/completions"
+        headers = {
+            "Content-Type": "application/json",
+            "Authorization": f"Bearer {openai_key}"
+        }
+        payload = {
+            "model": "gpt-4o-mini",
+            "messages": [
+                {"role": "system", "content": "You are a helpful assistant that outputs only valid raw JSON."},
+                {"role": "user", "content": prompt}
+            ],
+            "temperature": 0.2
+        }
+        try:
+            response = requests.post(url, headers=headers, json=payload, timeout=25)
+            if response.status_code == 200:
+                text = response.json()["choices"][0]["message"]["content"].strip()
+                text_clean = re.sub(r'^```json\s*|```$', '', text, flags=re.MULTILINE).strip()
+                return json.loads(text_clean)
+        except Exception as e:
+            print(f"OpenAI API single generation failed for '{name}': {e}")
+            
+    return None
+
+def generate_product_editorial(name, text_context):
+    # Try calling LLM first
+    llm_result = generate_single_product_editorial_via_llm(name, text_context)
+    if llm_result and isinstance(llm_result, dict) and "overview" in llm_result:
+        return llm_result
+        
+    print(f"LLM generation bypassed or failed for '{name}'. Falling back to built-in smart review heuristics...")
+    return generate_product_editorial_fallback(name, text_context)
 
 def extract_products_fallback(video, video_title, video_link, video_thumbnail_url):
     # Built-in fallback heuristics to split description metadata if LLM keys are absent/errored
@@ -563,13 +616,27 @@ def get_ai_gadget_report():
                         else:
                             text_context = transcript_text
                             
-                        # 3. Query LLM to isolate and document every single mentioned product
-                        llm_products = generate_all_products_via_llm(title_text, video_link, thumbnail_url, text_context)
+                        # TWO-STEP SEQUENTIAL LOOPING STRATEGY TO PREVENT OUTPUT TOKEN TRUNCATION:
+                        # Step 1: The Directory Call - get name list of all gadgets in transcript
+                        product_names = get_product_directory_from_context(title_text, text_context)
                         
-                        if llm_products:
-                            all_discovered_products.extend(llm_products)
+                        if product_names and isinstance(product_names, list):
+                            print(f"Product Directory retrieved for '{title_text}': {len(product_names)} items found.")
+                            # Step 2: The Multi-Turn Loop - generate deeply unique technical reviews one-by-one
+                            for name in product_names:
+                                print(f"-> Generating high-density review for: '{name}'")
+                                editorial = generate_product_editorial(name, text_context)
+                                all_discovered_products.append({
+                                    "name": name,
+                                    "overview": editorial["overview"],
+                                    "steps": editorial["steps"],
+                                    "benefits": editorial["benefits"],
+                                    "link": video_link,
+                                    "thumbnail_url": thumbnail_url
+                                })
                         else:
-                            # Heuristic fallback if LLM is not configured/errored
+                            # Heuristic fallback if LLM directory call is not configured/errored
+                            print(f"Bypassing directory call for '{title_text}'. Activating fallback parsing...")
                             extracted_fallback = extract_products_fallback(video, title_text, video_link, thumbnail_url)
                             all_discovered_products.extend(extracted_fallback)
                         
@@ -611,7 +678,7 @@ def get_ai_gadget_report():
     except Exception as e:
         print(f"Network Scraper Error: {e}")
         
-    # Generate HTML & Send Email (documenting ALL products without artificial capping)
+    # Generate HTML & Send Email (documenting ALL products securely)
     subject = f"Daily Tech Blog AI Gadgets Report — {run_time.strftime('%Y-%m-%d')}"
     try:
         html_report = generate_html_report(all_discovered_products, run_time)
