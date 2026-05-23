@@ -162,7 +162,14 @@ def generate_html_report(products, run_time):
 
 def send_email(subject, html_content):
     smtp_host = os.environ.get("SMTP_HOST", "smtp.gmail.com")
-    smtp_port = int(os.environ.get("SMTP_PORT", 587))
+    
+    # Safely parse port, handling empty strings and non-integer inputs gracefully
+    smtp_port_raw = os.environ.get("SMTP_PORT", "587")
+    try:
+        smtp_port = int(smtp_port_raw) if smtp_port_raw.strip() else 587
+    except ValueError:
+        smtp_port = 587
+        
     smtp_user = os.environ.get("SMTP_USER", "")
     smtp_password = os.environ.get("SMTP_PASSWORD", "")
     sender_email = os.environ.get("SENDER_EMAIL", "")
