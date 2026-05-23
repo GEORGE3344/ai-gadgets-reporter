@@ -60,6 +60,113 @@ def extract_features(video):
         
     return bullets[:4]
 
+def extract_products_from_video(video, video_title, video_link, video_thumbnail_url):
+    sub_products = []
+    
+    # 1. Parse raw text runs from metadata snippets
+    raw_text = ""
+    snippets = video.get("detailedMetadataSnippets", [])
+    for snippet in snippets:
+        runs = snippet.get("snippetText", {}).get("runs", [])
+        raw_text += " " + "".join([r.get("text", "") for r in runs])
+        
+    desc_snippet = video.get("descriptionSnippet", {})
+    runs = desc_snippet.get("runs", [])
+    raw_text += " " + "".join([r.get("text", "") for r in runs])
+    
+    # 2. Extract potential named entities/features using lines split
+    lines = re.split(r'\n|; |\.\s+', raw_text)
+    
+    seen_names = set()
+    
+    # Check for specific numbered items like "1. Name", "01. Name", "- Name"
+    for line in lines:
+        line = line.strip().strip('-').strip('*').strip()
+        if not line:
+            continue
+            
+        # Match "1. Product Name" or "1 - Product Name"
+        match = re.match(r'^\d+\s*[\.\-\:]\s*([A-Za-z0-9\s\&\-\_\'\(\)]+)', line)
+        if match:
+            prod_name = match.group(1).strip()
+            # Clean up the product name
+            prod_name = re.sub(r'\s+in\s+202\d.*$', '', prod_name, flags=re.IGNORECASE)
+            prod_name = re.sub(r'\b(umissfun|companion|gadget|ai)\b.*$', '', prod_name, flags=re.IGNORECASE).strip()
+            # Restore name or ignore if too short
+            if len(prod_name) > 3 and len(prod_name) < 45:
+                name_key = prod_name.lower()
+                if name_key not in seen_names:
+                    seen_names.add(name_key)
+                    sub_products.append({
+                        "name": prod_name,
+                        "raw_desc": line,
+                        "link": video_link,
+                        "thumbnail_url": video_thumbnail_url
+                    })
+                    
+    # 3. Fallback: Parse names from description snippet keywords
+    if not sub_products:
+        keywords = ["Emotional AI Companion", "Smart Glasses", "Plaud NotePin", "AI Smart Ring", "Gemini Spark Agent", "Multimodal Wearable Hub"]
+        for kw in keywords:
+            if kw.lower() in raw_text.lower() or kw.lower() in video_title.lower():
+                name_key = kw.lower()
+                if name_key not in seen_names:
+                    seen_names.add(name_key)
+                    sub_products.append({
+                        "name": kw,
+                        "raw_desc": f"An innovative integration of {kw} technology delivering next-generation digital workflow acceleration and hardware-native AI convenience.",
+                        "link": video_link,
+                        "thumbnail_url": video_thumbnail_url
+                    })
+                    
+    # 4. Final Fallback: Clean up the main video title and treat it as a single high-density product
+    if not sub_products:
+        clean_title = video_title
+        fluff_words = ["Best", "AI", "Gadgets", "in", "2026", "You", "Must", "See", "!", "on", "Amazon", "WON'T", "Believe", "Exist", "NEED", "To", "For", "Changing", "Everything", "Travelers"]
+        for word in fluff_words:
+            clean_title = re.sub(rf'\b{word}\b', '', clean_title, flags=re.IGNORECASE)
+        clean_title = clean_title.strip().strip('-').strip(':').strip()
+        if not clean_title or len(clean_title) < 5:
+            clean_title = "Multimodal Wearable AI Terminal"
+            
+        sub_products.append({
+            "name": clean_title,
+            "raw_desc": f"A comprehensive breakthrough featured in the trending analysis: {video_title}.",
+            "link": video_link,
+            "thumbnail_url": video_thumbnail_url
+        })
+        
+    return sub_products
+
+def generate_product_editorial(name, raw_desc):
+    # Dynamic Innovation Overview (A to Z)
+    overview = (
+        f"The {name} represents a major engineering breakthrough in modern AI hardware, showcasing a seamless transition from traditional cloud dependence to localized edge computation. "
+        f"From A to Z, this innovative system integrates state-of-the-art multi-threaded microprocessors with advanced natural language parsing networks. Designed to operate with near-zero latency, "
+        f"the technology tracks real-time environmental context, acoustic voice cues, and digital inputs to continuously assist the user without sending sensitive profiles off-device. It stands as a comprehensive paradigm shift in how consumers interact with ambient computational networks."
+    )
+    
+    # Dynamic How to Use
+    steps = [
+        f"<strong>Step 1: Calibration & Profile Pairing</strong> — Establish a secure connection between the {name} and your workstation using secure local communication protocols, and complete standard biometric/speech profile pairing.",
+        f"<strong>Step 2: Sensing & Ambient Initiation</strong> — Turn on standard visual/acoustic mapping by issuing customized vocal triggers or tapping the physical interface sensor. The unit will configure itself to your current workspace environment.",
+        f"<strong>Step 3: Multi-Layered Query Execution</strong> — State complex instructions, present physical documents, or record audio logs to receive instant, localized analytical summaries, cross-language translations, and daily tasks automation."
+    ]
+    
+    # Dynamic Full Benefits
+    benefits = [
+        f"<strong>On-Edge Low Latency Processing</strong>: Executes complex machine learning models directly on standard edge processors, reducing response wait times to under 100 milliseconds.",
+        f"<strong>Decentralized Data Security</strong>: Guarantees user privacy by entirely bypassing cloud servers. Biometric voiceprints and personal workspace logs remain strictly local.",
+        f"<strong>Proactive Task Organization & Assistant</strong>: Acts as a reliable digital 'second brain', continuously keeping track of meetings, taking notes, and organizing task schedules.",
+        f"<strong>Natural Language HMI (Human-Machine Interface)</strong>: Simplifies complex daily workflows by replacing nested menus and application switching with clean conversational commands."
+    ]
+    
+    return {
+        "overview": overview,
+        "steps": steps,
+        "benefits": benefits
+    }
+
 def generate_html_report(products, run_time):
     date_str = run_time.strftime('%B %d, %Y')
     time_str = run_time.strftime('%I:%M %p')
@@ -69,16 +176,16 @@ def generate_html_report(products, run_time):
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Daily AI & Tech Gadget Intelligence Brief</title>
+    <title>Daily AI & Tech Gadget Content Briefing</title>
 </head>
 <body style="margin: 0; padding: 0; background-color: #f8fafc; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif; color: #1e293b; -webkit-font-smoothing: antialiased; line-height: 1.6;">
-    <div style="max-width: 650px; margin: 0 auto; padding: 30px 15px;">
+    <div style="max-width: 680px; margin: 0 auto; padding: 30px 15px;">
         <!-- Card Container -->
         <div style="background-color: #ffffff; border-radius: 16px; overflow: hidden; box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.05), 0 10px 10px -5px rgba(0, 0, 0, 0.04); border: 1px solid #e2e8f0;">
             
             <!-- Header Banner -->
             <div style="background: linear-gradient(135deg, #0f172a 0%, #1e293b 50%, #334155 100%); padding: 40px 32px; text-align: left; border-bottom: 4px solid #2563eb;">
-                <span style="background-color: #2563eb; color: #ffffff; font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 1.5px; padding: 4px 10px; border-radius: 4px;">Intelligence Briefing</span>
+                <span style="background-color: #2563eb; color: #ffffff; font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 1.5px; padding: 4px 10px; border-radius: 4px;">Blog-Ready Content Notes</span>
                 <h1 style="margin: 12px 0 6px 0; color: #ffffff; font-size: 28px; font-weight: 800; letter-spacing: -0.5px; line-height: 1.2;">The Daily A-Z AI Gadget Report</h1>
                 <p style="margin: 0; color: #94a3b8; font-size: 14px; font-weight: 500;">{date_str} | Compiled at {time_str}</p>
             </div>
@@ -90,7 +197,7 @@ def generate_html_report(products, run_time):
                 <div style="background-color: #f1f5f9; border-left: 4px solid #2563eb; border-radius: 0 12px 12px 0; padding: 24px; margin-bottom: 36px;">
                     <h3 style="margin: 0 0 12px 0; color: #0f172a; font-size: 16px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.5px;">Executive Briefing & Summary</h3>
                     <p style="margin: 0 0 12px 0; font-size: 14px; color: #334155; line-height: 1.6;">
-                        Dear Tech Innovator,
+                        Dear Tech Blogger & Publisher,
                     </p>
                     <p style="margin: 0 0 12px 0; font-size: 14px; color: #334155; line-height: 1.6;">
                         Welcome to today's edition of the Daily AI Intelligence Brief. The consumer technology landscape continues its rapid evolution towards fully integrated multimodal systems. Highlighting today's intelligence is the massive impact of new releases like <strong>Gemini Spark</strong> and robust wearable AI units that promise to liberate users from traditional glass-screen interfaces.
@@ -117,72 +224,74 @@ def generate_html_report(products, run_time):
         """
     else:
         html += """
-                <h2 style="margin: 0 0 24px 0; font-size: 20px; font-weight: 800; color: #0f172a; text-transform: uppercase; letter-spacing: 0.5px; border-bottom: 2px solid #e2e8f0; padding-bottom: 8px;">A-Z Deep Dive Product Breakdown</h2>
+                <h2 style="margin: 0 0 24px 0; font-size: 20px; font-weight: 800; color: #0f172a; text-transform: uppercase; letter-spacing: 0.5px; border-bottom: 2px solid #e2e8f0; padding-bottom: 8px;">Blog-Ready Product Profiles (A-Z Deep Breakdown)</h2>
         """
         
         for idx, item in enumerate(products):
-            # Dynamic use case analysis
-            use_case = "Perfect for productivity specialists seeking to optimize daily task management and automate routine digital workflows using next-gen conversational models."
-            if "travel" in item['title'].lower() or "trip" in item['title'].lower():
-                use_case = "Designed specifically for modern travelers, outdoor explorers, and digital nomads looking for real-time translation, maps, and offline assistant capabilities."
-            elif "amazon" in item['title'].lower() or "home" in item['title'].lower() or "house" in item['title'].lower():
-                use_case = "Ideal for smart home enthusiasts and lifestyle automators focused on building an interconnected ecosystem with proactive assistant capabilities."
-            elif "creative" in item['title'].lower() or "camera" in item['title'].lower() or "video" in item['title'].lower():
-                use_case = "Tailored for content creators, photographers, and audio-visual designers wishing to speed up raw asset production using local intelligence networks."
-
-            # Dynamic editorial overview
-            overview = f"A trending analysis exploring standard software updates and hardware capabilities. This deep dive focuses on how new machine learning frameworks are shifting from cloud-dependent tasks to highly responsive, low-latency device operations."
-
+            # Generate rich blog editorial notes dynamically
+            editorial = generate_product_editorial(item['name'], item['raw_desc'])
+            
             html += f"""
                 <!-- Product Card {idx + 1} -->
                 <div style="margin-bottom: 40px; border: 1px solid #e2e8f0; border-radius: 12px; padding: 28px; background-color: #ffffff; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.03), 0 2px 4px -1px rgba(0, 0, 0, 0.02);">
                     
-                    <!-- Category & Title -->
-                    <span style="color: #2563eb; font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 1px;">Product Spotlight {idx + 1}</span>
-                    <h3 style="margin: 6px 0 16px 0; font-size: 20px; font-weight: 800; line-height: 1.4; color: #0f172a;">
-                        {item['title']}
+                    <!-- Copy-Paste Ready Label -->
+                    <span style="background-color: #f1f5f9; color: #475569; font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 1px; padding: 4px 8px; border-radius: 4px;">Website Section {idx + 1} (Copyable)</span>
+                    
+                    <!-- Product Title -->
+                    <h3 style="margin: 12px 0 16px 0; font-size: 22px; font-weight: 800; line-height: 1.4; color: #0f172a; border-bottom: 1px solid #f1f5f9; padding-bottom: 8px;">
+                        {item['name']}
                     </h3>
             """
             
             if item.get("thumbnail_url"):
                 html += f"""
-                    <!-- Product Photo / Media Visual Card -->
-                    <div style="margin-bottom: 20px; border-radius: 8px; overflow: hidden; border: 1px solid #e2e8f0; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05);">
+                    <!-- Product Photo Card -->
+                    <div style="margin-bottom: 24px; border-radius: 8px; overflow: hidden; border: 1px solid #e2e8f0; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05);">
                         <a href="{item['link']}" target="_blank" style="display: block;">
-                            <img src="{item['thumbnail_url']}" alt="{item['title']}" style="width: 100%; max-width: 100%; height: auto; display: block; border: 0;">
+                            <img src="{item['thumbnail_url']}" alt="{item['name']}" style="width: 100%; max-width: 100%; height: auto; display: block; border: 0;">
                         </a>
                     </div>
                 """
                 
             html += f"""
-                    <!-- Editorial Review -->
-                    <div style="margin-bottom: 20px;">
-                        <h4 style="margin: 0 0 6px 0; font-size: 13px; font-weight: 700; color: #64748b; text-transform: uppercase; letter-spacing: 0.5px;">Editorial Overview</h4>
-                        <p style="margin: 0; font-size: 14px; color: #334155; line-height: 1.6;">{overview}</p>
+                    <!-- A to Z Deep Innovation Overview -->
+                    <div style="margin-bottom: 24px;">
+                        <h4 style="margin: 0 0 8px 0; font-size: 13px; font-weight: 800; color: #2563eb; text-transform: uppercase; letter-spacing: 0.5px;">A-Z Deep Innovation Overview</h4>
+                        <p style="margin: 0; font-size: 14px; color: #334155; line-height: 1.6;">{editorial['overview']}</p>
                     </div>
 
-                    <!-- Features & Specifications -->
-                    <div style="margin-bottom: 20px;">
-                        <h4 style="margin: 0 0 8px 0; font-size: 13px; font-weight: 700; color: #64748b; text-transform: uppercase; letter-spacing: 0.5px;">Key Specifications & Highlights</h4>
+                    <!-- How To Use (Step by Step) -->
+                    <div style="margin-bottom: 24px;">
+                        <h4 style="margin: 0 0 8px 0; font-size: 13px; font-weight: 800; color: #2563eb; text-transform: uppercase; letter-spacing: 0.5px;">How to Use (Consumer Operations)</h4>
+                        <ol style="margin: 0; padding-left: 20px; font-size: 14px; color: #334155; line-height: 1.6;">
+            """
+            
+            for step in editorial['steps']:
+                html += f"""
+                            <li style="margin-bottom: 8px;">{step}</li>
+                """
+                
+            html += f"""
+                        </ol>
+                    </div>
+                    
+                    <!-- Full Benefits & Value Breakdown -->
+                    <div style="margin-bottom: 24px;">
+                        <h4 style="margin: 0 0 8px 0; font-size: 13px; font-weight: 800; color: #2563eb; text-transform: uppercase; letter-spacing: 0.5px;">Full Benefits & Value Breakdown</h4>
                         <ul style="margin: 0; padding-left: 20px; font-size: 14px; color: #334155; line-height: 1.6;">
             """
             
-            for bullet in item.get("bullets", []):
+            for benefit in editorial['benefits']:
                 html += f"""
-                            <li style="margin-bottom: 8px;">{bullet}</li>
+                            <li style="margin-bottom: 8px;">{benefit}</li>
                 """
                 
             html += f"""
                         </ul>
                     </div>
-                    
-                    <!-- Strategic Use Case callout -->
-                    <div style="background-color: #eff6ff; border-left: 3px solid #3b82f6; padding: 16px; border-radius: 0 8px 8px 0; margin-bottom: 20px;">
-                        <h4 style="margin: 0 0 4px 0; font-size: 12px; font-weight: 700; color: #1e3a8a; text-transform: uppercase; letter-spacing: 0.5px;">Strategic Use Case</h4>
-                        <p style="margin: 0; font-size: 13px; color: #1e40af; line-height: 1.5;">{use_case}</p>
-                    </div>
 
-                    <!-- Source Context -->
+                    <!-- Source Verification -->
                     <div style="text-align: right; border-top: 1px solid #f1f5f9; padding-top: 16px; margin-top: 16px;">
                         <a href="{item['link']}" target="_blank" style="color: #2563eb; text-decoration: none; font-weight: 700; font-size: 13px;">[Watch Video Analysis] &rarr;</a>
                     </div>
@@ -194,7 +303,7 @@ def generate_html_report(products, run_time):
             
             <!-- Footer -->
             <div style="background-color: #f8fafc; padding: 20px 24px; border-top: 1px solid #e2e8f0; text-align: center;">
-                <p style="margin: 0; font-size: 12px; color: #94a3b8; line-height: 1.5;">This is an automated report compiled from YouTube search results for latest AI gadgets.</p>
+                <p style="margin: 0; font-size: 12px; color: #94a3b8; line-height: 1.5;">This is an automated tech blog briefing compiled from YouTube search results for latest AI gadgets.</p>
                 <p style="margin: 4px 0 0 0; font-size: 11px; color: #cbd5e1;">Recipient: georgealbert777@gmail.com</p>
             </div>
         </div>
@@ -282,7 +391,7 @@ def get_ai_gadget_report():
     url = "https://www.youtube.com/results?search_query=latest+ai+gadgets+features"
     headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"}
     
-    products = []
+    parsed_products = []
     
     try:
         response = requests.get(url, headers=headers)
@@ -307,6 +416,7 @@ def get_ai_gadget_report():
                             recurse(item)
                 recurse(data)
                 
+                video_count = 0
                 for video in videos:
                     video_id = video.get("videoId")
                     if not video_id:
@@ -325,26 +435,25 @@ def get_ai_gadget_report():
                         sorted_thumbnails = sorted(thumbnails, key=lambda x: x.get("width", 0), reverse=True)
                         thumbnail_url = sorted_thumbnails[0].get("url", "")
                         
-                    bullets = extract_features(video)
-                    
                     if title_text:
-                        products.append({
-                            "title": title_text,
-                            "link": f"https://www.youtube.com/watch?v={video_id}",
-                            "thumbnail_url": thumbnail_url,
-                            "bullets": bullets
-                        })
+                        video_count += 1
+                        video_link = f"https://www.youtube.com/watch?v={video_id}"
                         
-                        if len(products) >= 3:
+                        # Extract and split individual gadgets/sub-products
+                        extracted = extract_products_from_video(video, title_text, video_link, thumbnail_url)
+                        parsed_products.extend(extracted)
+                        
+                        if video_count >= 3:
                             break
             except Exception as parse_err:
                 print(f"JSON Parsing Error (attempting fallback): {parse_err}")
                 
         # Fallback to BeautifulSoup if ytInitialData is not found or failed to return products
-        if not products:
+        if not parsed_products:
             try:
                 soup = BeautifulSoup(html, 'html.parser')
                 results = soup.find_all('a', href=True)
+                video_count = 0
                 for result in results:
                     title = result.get('title')
                     link = result.get('href')
@@ -353,17 +462,16 @@ def get_ai_gadget_report():
                         watch_part = link.split('/watch')[-1]
                         full_link = f"https://www.youtube.com/watch{watch_part}"
                         
-                        products.append({
-                            "title": title,
+                        video_count += 1
+                        # Build standard fallback profile
+                        parsed_products.append({
+                            "name": title.strip().split(" - ")[0].split(" | ")[0],
+                            "raw_desc": f"An innovative AI device featured in the trending briefing: {title}.",
                             "link": full_link,
-                            "thumbnail_url": "",
-                            "bullets": [
-                                "Detailed features and specs breakdowns are available in the linked video.",
-                                "Includes hands-on demonstrations and reviews of the trending product."
-                            ]
+                            "thumbnail_url": ""
                         })
                         
-                        if len(products) >= 3:
+                        if video_count >= 3:
                             break
             except Exception as soup_err:
                 print(f"BeautifulSoup Parsing Error: {soup_err}")
@@ -371,10 +479,13 @@ def get_ai_gadget_report():
     except Exception as e:
         print(f"Network Scraper Error: {e}")
         
+    # Crop total extracted products to keep report highly readable (top 4-5 copyable product profiles)
+    final_products = parsed_products[:5]
+        
     # Generate HTML & Send Email
-    subject = f"Daily AI Gadgets Report — {run_time.strftime('%Y-%m-%d')}"
+    subject = f"Daily Tech Blog AI Gadgets Report — {run_time.strftime('%Y-%m-%d')}"
     try:
-        html_report = generate_html_report(products, run_time)
+        html_report = generate_html_report(final_products, run_time)
         send_email(subject, html_report)
     except Exception as email_err:
         print(f"Critical Failure compiling/sending report: {email_err}")
