@@ -170,9 +170,9 @@ def send_email(subject, html_content):
     except ValueError:
         smtp_port = 587
         
-    smtp_user = os.environ.get("SMTP_USER", "")
-    smtp_password = os.environ.get("SMTP_PASSWORD", "")
-    sender_email = os.environ.get("SENDER_EMAIL", "")
+    smtp_user = os.environ.get("SMTP_USER") or os.environ.get("SENDER_EMAIL") or ""
+    smtp_password = os.environ.get("SMTP_PASSWORD") or os.environ.get("EMAIL_PASSWORD") or ""
+    sender_email = os.environ.get("SENDER_EMAIL") or smtp_user
     receiver_email = os.environ.get("RECEIVER_EMAIL", "georgealbert777@gmail.com")
     
     if not smtp_user or not smtp_password:
