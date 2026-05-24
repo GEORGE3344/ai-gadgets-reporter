@@ -114,7 +114,8 @@ def get_product_directory_from_context(video_title, text_context):
     \"\"\"
     
     TASK:
-    Identify every single distinct tech product, hardware gadget, or software application mentioned, reviewed, or featured by the presenter in the transcript from start to finish. Do not limit the count. If twenty gadgets are discussed, capture all twenty.
+    Identify every single distinct tech product, hardware gadget, or software application mentioned, reviewed, or featured by the presenter in the transcript from start to finish.
+    CRITICAL REQUIREMENT: There must be absolutely NO limits (such as '3' or '20') on the product extraction count. If the transcript discusses 5, 23, 35, or 50 products, you MUST dynamically isolate and list every single one of them. Do not truncate, omit, or group them.
     
     Provide your output in valid JSON format with a key named "product_names" containing a list of strings representing the names of each product. Do NOT wrap the JSON in markdown code blocks like ```json. Output ONLY the raw JSON string matching this schema:
     {{
@@ -627,7 +628,7 @@ def get_ai_gadget_report():
                             print(f"Directory call exception for '{title_text}': {dir_err}")
                             
                         if product_names and isinstance(product_names, list):
-                            print(f"Product Directory retrieved for '{title_text}': {len(product_names)} items found.")
+                            print(f"Dynamic product array size retrieved from transcript: {len(product_names)}")
                             # Step 2: The Multi-Turn Loop - generate deeply unique technical reviews one-by-one
                             # We iterate through the entire list from start to finish synchronously
                             for name in product_names:
@@ -664,9 +665,6 @@ def get_ai_gadget_report():
                                 all_discovered_products.extend(extracted_fallback)
                             except Exception as fallback_extract_err:
                                 print(f"Fallback parsing exception for '{title_text}': {fallback_extract_err}")
-                        
-                        if video_count >= 3:
-                            break
             except Exception as parse_err:
                 print(f"JSON Parsing Error (attempting fallback): {parse_err}")
                 
@@ -694,9 +692,6 @@ def get_ai_gadget_report():
                             "link": full_link,
                             "thumbnail_url": ""
                         })
-                        
-                        if video_count >= 3:
-                            break
             except Exception as soup_err:
                 print(f"BeautifulSoup Parsing Error: {soup_err}")
                 
@@ -706,6 +701,7 @@ def get_ai_gadget_report():
     # Generate HTML & Send Email (documenting ALL products securely)
     subject = f"Daily Tech Blog AI Gadgets Report — {run_time.strftime('%Y-%m-%d')}"
     try:
+        print(f"Total compiled copyable section profiles: {len(all_discovered_products)}")
         html_report = generate_html_report(all_discovered_products, run_time)
         send_email(subject, html_report)
     except Exception as email_err:
