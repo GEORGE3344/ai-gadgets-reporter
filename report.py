@@ -618,27 +618,50 @@ def get_ai_gadget_report():
                             
                         # TWO-STEP SEQUENTIAL LOOPING STRATEGY TO PREVENT OUTPUT TOKEN TRUNCATION:
                         # Step 1: The Directory Call - get name list of all gadgets in transcript
-                        product_names = get_product_directory_from_context(title_text, text_context)
-                        
+                        product_names = None
+                        try:
+                            product_names = get_product_directory_from_context(title_text, text_context)
+                        except Exception as dir_err:
+                            print(f"Directory call exception for '{title_text}': {dir_err}")
+                            
                         if product_names and isinstance(product_names, list):
                             print(f"Product Directory retrieved for '{title_text}': {len(product_names)} items found.")
                             # Step 2: The Multi-Turn Loop - generate deeply unique technical reviews one-by-one
+                            # We iterate through the entire list from start to finish synchronously
                             for name in product_names:
-                                print(f"-> Generating high-density review for: '{name}'")
-                                editorial = generate_product_editorial(name, text_context)
-                                all_discovered_products.append({
-                                    "name": name,
-                                    "overview": editorial["overview"],
-                                    "steps": editorial["steps"],
-                                    "benefits": editorial["benefits"],
-                                    "link": video_link,
-                                    "thumbnail_url": thumbnail_url
-                                })
+                                try:
+                                    print(f"-> Generating high-density review for: '{name}' (Synchronous API Call)")
+                                    editorial = generate_product_editorial(name, text_context)
+                                    all_discovered_products.append({
+                                        "name": name,
+                                        "overview": editorial["overview"],
+                                        "steps": editorial["steps"],
+                                        "benefits": editorial["benefits"],
+                                        "link": video_link,
+                                        "thumbnail_url": thumbnail_url
+                                    })
+                                except Exception as single_err:
+                                    print(f"Error generating review for '{name}' - falling back to heuristic review: {single_err}")
+                                    try:
+                                        editorial = generate_product_editorial_fallback(name, text_context)
+                                        all_discovered_products.append({
+                                            "name": name,
+                                            "overview": editorial["overview"],
+                                            "steps": editorial["steps"],
+                                            "benefits": editorial["benefits"],
+                                            "link": video_link,
+                                            "thumbnail_url": thumbnail_url
+                                        })
+                                    except Exception as fallback_err:
+                                        print(f"Critical fallback failure for '{name}': {fallback_err}")
                         else:
                             # Heuristic fallback if LLM directory call is not configured/errored
                             print(f"Bypassing directory call for '{title_text}'. Activating fallback parsing...")
-                            extracted_fallback = extract_products_fallback(video, title_text, video_link, thumbnail_url)
-                            all_discovered_products.extend(extracted_fallback)
+                            try:
+                                extracted_fallback = extract_products_fallback(video, title_text, video_link, thumbnail_url)
+                                all_discovered_products.extend(extracted_fallback)
+                            except Exception as fallback_extract_err:
+                                print(f"Fallback parsing exception for '{title_text}': {fallback_extract_err}")
                         
                         if video_count >= 3:
                             break
