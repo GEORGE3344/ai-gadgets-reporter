@@ -310,7 +310,8 @@ def extract_products_fallback(video, video_title, video_link, video_thumbnail_ur
                     
     if not sub_products:
         clean_title = video_title
-        fluff_words = ["Best", "AI", "Gadgets", "in", "2026", "You", "Must", "See", "!", "on", "Amazon", "WON'T", "Believe", "Exist", "NEED", "To", "For", "Changing", "Everything", "Travelers"]
+        current_year = str(datetime.now().year)
+        fluff_words = ["Best", "AI", "Gadgets", "in", current_year, "You", "Must", "See", "!", "on", "Amazon", "WON'T", "Believe", "Exist", "NEED", "To", "For", "Changing", "Everything", "Travelers"]
         for word in fluff_words:
             clean_title = re.sub(rf'\b{word}\b', '', clean_title, flags=re.IGNORECASE)
         clean_title = clean_title.strip().strip('-').strip(':').strip()
@@ -547,7 +548,8 @@ def get_ai_gadget_report():
     run_time = datetime.now()
     print(f"--- {run_time.strftime('%Y-%m-%d %H:%M')} — DAILY REPORT RUN ---")
     
-    url = "https://www.youtube.com/results?search_query=latest+ai+gadgets+features"
+    current_year = datetime.now().year
+    url = f"https://www.youtube.com/results?search_query=latest+ai+gadgets+features+{current_year}"
     headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"}
     
     all_discovered_products = []
